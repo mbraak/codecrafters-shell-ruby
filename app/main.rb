@@ -57,8 +57,25 @@ class Shell
 
     if %w[echo exit type].include?(command)
       puts("#{command} is a shell builtin")
+      return
+    end
+
+    command_path = find_command_path(command)
+
+    if command_path
+      puts("#{command} is #{command_path}/#{command}")
     elsif !command.nil?
       puts("#{command}: not found")
+    end
+  end
+
+  def paths
+    @paths ||= ENV['PATH'].split(':').map { Pathname.new(_1) }
+  end
+
+  def find_command_path(command)
+    paths.find do |path|
+      path.join(command).exist?
     end
   end
 end
