@@ -37,10 +37,12 @@ class Shell
 
   def parse(command, args)
     case command
-    when 'exit'
-      exit_repl
     when 'echo'
       handle_echo(args)
+    when 'exit'
+      exit_repl
+    when 'type'
+      handle_type(args)
     else
       puts("#{command}: command not found")
     end
@@ -48,6 +50,16 @@ class Shell
 
   def handle_echo(args)
     puts(args.join(' '))
+  end
+
+  def handle_type(args)
+    command = args[0]
+
+    if %w[echo exit type].include?(command)
+      puts("#{command} is a shell builtin")
+    elsif !command.nil?
+      puts("#{command}: not found")
+    end
   end
 end
 
