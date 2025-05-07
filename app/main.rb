@@ -37,12 +37,14 @@ class Shell
 
   def parse(command, args)
     case command
-    when 'echo'
+    in 'echo'
       handle_echo(args)
-    when 'exit'
+    in 'exit'
       exit_repl
-    when 'type'
+    in 'type'
       handle_type(args)
+    in _ if find_command_path(command)
+      handle_program(command, args)
     else
       puts("#{command}: command not found")
     end
@@ -67,6 +69,12 @@ class Shell
     elsif !command.nil?
       puts("#{command}: not found")
     end
+  end
+
+  def handle_program(command, args)
+    args_string = args.join(' ')
+    command_string = "#{command} #{args_string}"
+    system(command_string)
   end
 
   def paths
