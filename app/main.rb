@@ -41,6 +41,8 @@ class Shell
       handle_echo(args)
     in 'exit'
       exit_repl
+    in 'pwd'
+      handle_pwd
     in 'type'
       handle_type(args)
     in _ if find_command_path(command)
@@ -57,7 +59,7 @@ class Shell
   def handle_type(args)
     command = args[0]
 
-    if %w[echo exit type].include?(command)
+    if %w[echo exit pwd type].include?(command)
       puts("#{command} is a shell builtin")
       return
     end
@@ -75,6 +77,10 @@ class Shell
     args_string = args.join(' ')
     command_string = "#{command} #{args_string}"
     system(command_string)
+  end
+
+  def handle_pwd
+    puts(Dir.getwd)
   end
 
   def paths
