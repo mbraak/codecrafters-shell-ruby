@@ -33,6 +33,26 @@ class Command
   def run; end
 end
 
+class CDCommand < Command
+  def run
+    if pathname.exist?
+      Dir.chdir(pathname)
+    else
+      puts("cd: #{pathname}: No such file or directory")
+    end
+  end
+
+  private
+
+  def pathname
+    @pathname ||= if args.first.start_with?('~')
+                    Pathname.new(ENV['HOME'])
+                  else
+                    Pathname.new(args.first)
+                  end
+  end
+end
+
 class EchoCommand < Command
   def run
     puts(args.join(' '))
@@ -60,8 +80,6 @@ class PwdCommand < Command
 end
 
 class TypeCommand < Command
-  BUILTIN_COMMANDS = %w[echo exit pwd type].freeze
-
   def run
     puts(builtin_result || program_result || not_found_result)
   end
@@ -69,11 +87,11 @@ class TypeCommand < Command
   private
 
   def command_arg
-    args[0]
+    args.first
   end
 
   def builtin?
-    BUILTIN_COMMANDS.include?(command_arg)
+    Builtins.builtin?(command_arg)
   end
 
   def command_path
@@ -91,6 +109,24 @@ class TypeCommand < Command
 
   def not_found_result
     "#{command_arg}: not found"
+  end
+end
+
+class Builtins
+  COMMANDS = {
+    cd: CDCommand,
+    echo: EchoCommand,
+    exit: ExitCommand,
+    pwd: PwdCommand,
+    type: TypeCommand
+  }.freeze
+
+  def self.get_command_class(command_name)
+    COMMANDS[command_name.to_sym]
+  end
+
+  def self.builtin?(command_name)
+    COMMANDS.key?(command_name.to_sym)
   end
 end
 
@@ -127,20 +163,29 @@ class Shell
   end
 
   def parse(command, args)
-    case command
-    in 'echo'
-      EchoCommand.new(args:, command:, context:).run
-    in 'exit'
-      ExitCommand.new(args:, command:, context:).run
-    in 'pwd'
-      PwdCommand.new(args:, command:, context:).run
-    in 'type'
-      TypeCommand.new(args:, command:, context:).run
-    in _ if context.find_command_path(command)
-      ExecutableCommand.new(args:, command:, context:).run
-    else
-      puts("#{command}: command not found")
-    end
+    try_run_builtin_command(command, args) || try_run_executable(command, args) || command_not_found(command)
+  end
+
+  def try_run_builtin_command(command, args)
+    command_class = Builtins.get_command_class(command)
+
+    return false unless command_class
+
+    command_class.new(args:, command:, context:).run
+    true
+  end
+
+  def try_run_executable(command, args)
+    command_path = context.find_command_path(command)
+
+    return false unless command_path
+
+    ExecutableCommand.new(args:, command:, context:).run
+    true
+  end
+
+  def command_not_found(command)
+    puts("#{command}: command not found")
   end
 end
 
