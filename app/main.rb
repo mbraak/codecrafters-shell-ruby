@@ -1,3 +1,59 @@
+class SplitLine
+  attr_reader :input_line, :part, :parts, :previous_char, :single_quote
+
+  def initialize(input_line)
+    @input_line = input_line
+    @parts = []
+    @part = ''
+    @previous_char = nil
+    @single_quote = false
+  end
+
+  def run
+    input_line.chomp.chars.each do |char|
+      if single_quote
+        handle_char_in_single_quote(char)
+      else
+        handle_char(char)
+      end
+
+      @previous_char = char
+    end
+
+    parts << @part if @part
+
+    [parts.first, parts[1..]]
+  end
+
+  private
+
+  def handle_char(char)
+    case char
+    in ' '
+      unless part.empty?
+        parts << part
+        @part = ''
+      end
+    in "'" if part.empty?
+      @single_quote = true
+      @part += char
+    else
+      @part += char
+    end
+  end
+
+  def handle_char_in_single_quote(char)
+    if char == "'"
+      @part += char
+      parts << part
+      @part = ''
+      @single_quote = false
+    else
+      @part += char
+    end
+  end
+end
+
 class ShellContext
   attr_reader :continue, :exit_code
 
@@ -55,7 +111,32 @@ end
 
 class EchoCommand < Command
   def run
-    puts(args.join(' '))
+    puts(line)
+  end
+
+  private
+
+  def line
+    previous_arg_quoted = false
+
+    args
+      .map do |arg|
+        if arg[0] == "'" && arg[-1] == "'"
+          result = arg[1..-2]
+
+          if previous_arg_quoted
+            result
+          else
+            previous_arg_quoted = true
+            "#{result} "
+          end
+        else
+          previous_arg_quoted = false
+          "#{arg} "
+        end
+      end
+      .join
+      .strip
   end
 end
 
@@ -157,8 +238,7 @@ class Shell
     if input_line.nil?
       [nil, nil]
     else
-      command, *args = input_line.chomp.split(' ')
-      [command, args]
+      SplitLine.new(input_line).run
     end
   end
 
