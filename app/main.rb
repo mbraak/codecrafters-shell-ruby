@@ -1,8 +1,9 @@
 class SplitLine
-  attr_reader :input_line, :part, :parts, :previous_char, :single_quote
+  attr_reader :double_qoute, :input_line, :part, :parts, :previous_char, :single_quote
 
   def initialize(input_line)
     @input_line = input_line
+    @double_qoute = false
     @parts = []
     @part = ''
     @previous_char = nil
@@ -13,6 +14,8 @@ class SplitLine
     input_line.chomp.chars.each do |char|
       if single_quote
         handle_char_in_single_quote(char)
+      elsif double_qoute
+        handle_char_in_double_quote(char)
       else
         handle_char(char)
       end
@@ -30,12 +33,16 @@ class SplitLine
   def handle_char(char)
     case char
     in ' '
-      unless part.empty?
-        parts << part
+      if previous_char != ' '
+        parts << part unless part.empty?
+        parts << ' ' unless parts.length == 1
         @part = ''
       end
     in "'" if part.empty?
       @single_quote = true
+      @part += char
+    in '"' if part.empty?
+      @double_qoute = true
       @part += char
     else
       @part += char
@@ -48,6 +55,17 @@ class SplitLine
       parts << part
       @part = ''
       @single_quote = false
+    else
+      @part += char
+    end
+  end
+
+  def handle_char_in_double_quote(char)
+    if char == '"'
+      @part += char
+      parts << part
+      @part = ''
+      @double_qoute = false
     else
       @part += char
     end
@@ -117,22 +135,14 @@ class EchoCommand < Command
   private
 
   def line
-    previous_arg_quoted = false
-
     args
       .map do |arg|
         if arg[0] == "'" && arg[-1] == "'"
-          result = arg[1..-2]
-
-          if previous_arg_quoted
-            result
-          else
-            previous_arg_quoted = true
-            "#{result} "
-          end
+          arg[1..-2]
+        elsif arg[0] == '"' && arg[-1] == '"'
+          arg[1..-2]
         else
-          previous_arg_quoted = false
-          "#{arg} "
+          arg
         end
       end
       .join
