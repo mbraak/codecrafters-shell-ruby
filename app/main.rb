@@ -23,7 +23,7 @@ class SplitLine
       @previous_char = char
     end
 
-    parts << @part if @part
+    parts << part unless part.empty?
 
     [parts.first, parts[1..]]
   end
@@ -31,27 +31,39 @@ class SplitLine
   private
 
   def handle_char(char)
-    case char
-    in ' '
-      if previous_char != ' '
-        parts << part unless part.empty?
-        parts << ' ' unless parts.length == 1
-        @part = ''
-      end
-    in "'" if part.empty?
-      @single_quote = true
-      @part += char
-    in '"' if part.empty?
-      @double_qoute = true
+    if previous_char == '\\'
       @part += char
     else
-      @part += char
+      case char
+      in ' '
+        unless part.empty?
+          parts << part
+          @part = ''
+        end
+      in "'" if part.empty?
+        if previous_char == "'"
+          @part = parts[-1]
+          @parts.pop
+        end
+
+        @single_quote = true
+      in '"' if part.empty?
+        if previous_char == '"'
+          @part = parts[-1]
+          @parts.pop
+        end
+
+        @double_qoute = true
+      in '\\'
+        # Do nothing
+      else
+        @part += char
+      end
     end
   end
 
   def handle_char_in_single_quote(char)
     if char == "'"
-      @part += char
       parts << part
       @part = ''
       @single_quote = false
@@ -62,7 +74,6 @@ class SplitLine
 
   def handle_char_in_double_quote(char)
     if char == '"'
-      @part += char
       parts << part
       @part = ''
       @double_qoute = false
@@ -136,25 +147,14 @@ class EchoCommand < Command
 
   def line
     args
-      .map do |arg|
-        if arg[0] == "'" && arg[-1] == "'"
-          arg[1..-2]
-        elsif arg[0] == '"' && arg[-1] == '"'
-          arg[1..-2]
-        else
-          arg
-        end
-      end
-      .join
+      .join(' ')
       .strip
   end
 end
 
 class ExecutableCommand < Command
   def run
-    args_string = args.join(' ')
-    command_string = "#{command} #{args_string}"
-    system(command_string)
+    system(command, *args)
   end
 end
 
