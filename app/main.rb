@@ -1,9 +1,10 @@
 class SplitLine
-  attr_reader :double_qoute, :input_line, :part, :parts, :previous_char, :single_quote
+  attr_reader :double_qoute, :escape, :input_line, :part, :parts, :previous_char, :single_quote
 
   def initialize(input_line)
     @input_line = input_line
     @double_qoute = false
+    @escape = false
     @parts = []
     @part = ''
     @previous_char = nil
@@ -31,8 +32,9 @@ class SplitLine
   private
 
   def handle_char(char)
-    if previous_char == '\\'
+    if escape
       @part += char
+      @escape = false
     else
       case char
       in ' '
@@ -40,22 +42,12 @@ class SplitLine
           parts << part
           @part = ''
         end
-      in "'" if part.empty?
-        if previous_char == "'"
-          @part = parts[-1]
-          @parts.pop
-        end
-
+      in "'"
         @single_quote = true
-      in '"' if part.empty?
-        if previous_char == '"'
-          @part = parts[-1]
-          @parts.pop
-        end
-
+      in '"'
         @double_qoute = true
       in '\\'
-        # Do nothing
+        @escape = true
       else
         @part += char
       end
@@ -64,8 +56,6 @@ class SplitLine
 
   def handle_char_in_single_quote(char)
     if char == "'"
-      parts << part
-      @part = ''
       @single_quote = false
     else
       @part += char
@@ -73,12 +63,19 @@ class SplitLine
   end
 
   def handle_char_in_double_quote(char)
-    if char == '"'
-      parts << part
-      @part = ''
-      @double_qoute = false
-    else
+    if escape
+      @part += '\\' unless '\\$"'.include?(char)
       @part += char
+      @escape = false
+    else
+      case char
+      in '"'
+        @double_qoute = false
+      in '\\'
+        @escape = true
+      else
+        @part += char
+      end
     end
   end
 end
