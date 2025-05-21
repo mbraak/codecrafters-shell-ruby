@@ -162,8 +162,8 @@ class ExecutableCommand < Command
       stderr_output = stderr.read
       stdout_output = stdout.read
 
-      output.write_stderr(stderr_output) unless stderr_output.empty?
-      output.write_stdout(stdout_output) unless stdout_output.empty?
+      output.write_stderr(stderr_output)
+      output.write_stdout(stdout_output)
     end
   end
 end
@@ -233,15 +233,15 @@ end
 
 class StandardOutput
   def write_stdout(line)
-    puts(line)
+    puts(line) unless line.empty?
   end
 
   def write_stderr(line)
-    puts(line)
+    puts(line) unless line.empty?
   end
 end
 
-class RedirectOutput
+class RedirectStdoutOutput < StandardOutput
   attr_reader :file_name
 
   def initialize(file_name)
@@ -251,27 +251,34 @@ class RedirectOutput
   def write_stdout(line)
     File.write(file_name, line)
   end
+end
+
+class RedirectStderrOutput < StandardOutput
+  attr_reader :file_name
+
+  def initialize(file_name)
+    @file_name = file_name
+  end
 
   def write_stderr(line)
-    puts(line)
+    File.write(file_name, line)
   end
 end
 
 class RunCommand
   attr_reader :args, :command, :context, :output
 
-  def initialize(args:, command:, context:, redirect:)
+  def initialize(args:, command:, context:, output:)
     @args = args
     @command = command
     @context = context
-    @output = if redirect
-                RedirectOutput.new(redirect)
-              else
-                StandardOutput.new
-              end
+    @output = output
   end
 
   def run
+    output.write_stderr('')
+    output.write_stdout('')
+
     try_run_builtin_command || try_run_executable || command_not_found
   end
 
@@ -318,9 +325,9 @@ class Shell
     command, all_args = read
     return context.exit_repl if command.nil?
 
-    args, redirect = parse_redirect(all_args)
+    args, output = parse_redirect(all_args)
 
-    RunCommand.new(args:, command:, context:, redirect:).run
+    RunCommand.new(args:, command:, context:, output:).run
   end
 
   def read
@@ -335,9 +342,11 @@ class Shell
 
   def parse_redirect(args)
     if args.length >= 3 && args[-2] == '>' || args[-2] == '1>'
-      [args[0..-3], args[-1]]
+      [args[0..-3], RedirectStdoutOutput.new(args[-1])]
+    elsif args.length >= 3 && args[-2] == '2>'
+      [args[0..-3], RedirectStderrOutput.new(args[-1])]
     else
-      [args, nil]
+      [args, StandardOutput.new]
     end
   end
 end
