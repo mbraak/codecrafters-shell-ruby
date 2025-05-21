@@ -1,3 +1,4 @@
+require 'fileutils'
 require 'open3'
 
 class SplitLine
@@ -239,29 +240,123 @@ class StandardOutput
   def write_stderr(line)
     puts(line) unless line.empty?
   end
+
+  def touch; end
 end
 
-class RedirectStdoutOutput < StandardOutput
-  attr_reader :file_name
+class RedirectOutput < StandardOutput
+  attr_reader :append, :file_name
 
-  def initialize(file_name)
+  def initialize(append:, file_name:)
+    super()
+
+    @append = append
     @file_name = file_name
   end
 
+  def touch
+    FileUtils.touch(file_name)
+  end
+
+  protected
+
+  def write_to_file(line)
+    mode = append ? 'a' : 'w'
+
+    line = "\n#{line}" if append && !File.read(file_name).empty?
+
+    file = File.new(file_name, mode)
+    file.write(line)
+    file.close
+  end
+end
+
+class RedirectStdoutOutput < RedirectOutput
   def write_stdout(line)
-    File.write(file_name, line)
+    write_to_file(line)
   end
 end
 
-class RedirectStderrOutput < StandardOutput
-  attr_reader :file_name
+class RedirectStderrOutput < RedirectOutput
+  def write_stderr(line)
+    write_to_file(line)
+  end
+end
 
-  def initialize(file_name)
-    @file_name = file_name
+class ParseRedirectArgs
+  attr_reader :args
+
+  def initialize(args)
+    @args = args
+    @parsed = false
   end
 
-  def write_stderr(line)
-    File.write(file_name, line)
+  def parsed_args
+    @parsed_args ||= begin
+      parse_once
+
+      if redirect_symbol.nil?
+        args
+      else
+        args[0..-3]
+      end
+    end
+  end
+
+  def output
+    parse_once
+    @output
+  end
+
+  private
+
+  def parse_once
+    return if @parsed
+
+    parse
+    @parsed = true
+  end
+
+  def parse
+    @output = case redirect_number
+              in '1'
+                RedirectStdoutOutput.new(append: append?, file_name: args[-1])
+              in '2'
+                RedirectStderrOutput.new(append: append?, file_name: args[-1])
+              else
+                StandardOutput.new
+              end
+  end
+
+  def redirect_symbol
+    @redirect_symbol ||= (args[-2] if args.length >= 3 && valid_redirect_symbol?(args[-2]))
+  end
+
+  def append?
+    !redirect_symbol.nil? && redirect_symbol.end_with?('>>')
+  end
+
+  def valid_redirect_symbol?(symbol)
+    return false unless symbol[-1] == '>'
+
+    case symbol.length
+    in 1
+      true
+    in 2
+      %w[1 2 >].include?(symbol[0])
+    in 3
+      %w[1 2].include?(symbol[0]) && symbol[1] == '>'
+    end
+  end
+
+  def redirect_number
+    @redirect_number ||= if redirect_symbol.nil?
+                           nil
+                         elsif redirect_symbol.length == 1 || redirect_symbol[0] == '>'
+                           '1'
+                         else
+                           redirect_symbol[0]
+                         end
   end
 end
 
@@ -276,8 +371,7 @@ class RunCommand
   end
 
   def run
-    output.write_stderr('')
-    output.write_stdout('')
+    output.touch
 
     try_run_builtin_command || try_run_executable || command_not_found
   end
@@ -322,12 +416,17 @@ class Shell
 
   def read_eval_print
     $stdout.write('$ ')
-    command, all_args = read
+    command, args = read
     return context.exit_repl if command.nil?
 
-    args, output = parse_redirect(all_args)
+    parse_redirect = ParseRedirectArgs.new(args)
 
-    RunCommand.new(args:, command:, context:, output:).run
+    RunCommand.new(
+      args: parse_redirect.parsed_args,
+      command:,
+      context:,
+      output: parse_redirect.output
+    ).run
   end
 
   def read
@@ -340,15 +439,7 @@ class Shell
     end
   end
 
-  def parse_redirect(args)
-    if args.length >= 3 && args[-2] == '>' || args[-2] == '1>'
-      [args[0..-3], RedirectStdoutOutput.new(args[-1])]
-    elsif args.length >= 3 && args[-2] == '2>'
-      [args[0..-3], RedirectStderrOutput.new(args[-1])]
-    else
-      [args, StandardOutput.new]
-    end
-  end
+  def parse_redirect(args); end
 end
 
 shell = Shell.new
