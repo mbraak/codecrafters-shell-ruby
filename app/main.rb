@@ -1,3 +1,5 @@
+require 'open3'
+
 class SplitLine
   attr_reader :double_qoute, :escape, :input_line, :part, :parts, :previous_char, :single_quote
 
@@ -104,15 +106,20 @@ class ShellContext
 end
 
 class Command
-  attr_reader :args, :command, :context
+  attr_reader :args, :command, :context, :output
 
-  def initialize(args:, command:, context:)
+  def initialize(args:, command:, context:, output:)
     @args = args
     @command = command
     @context = context
+    @output = output
   end
 
   def run; end
+
+  def write_stdout(line)
+    output.write_stdout(line)
+  end
 end
 
 class CDCommand < Command
@@ -120,7 +127,7 @@ class CDCommand < Command
     if pathname.exist?
       Dir.chdir(pathname)
     else
-      puts("cd: #{pathname}: No such file or directory")
+      write_stdout("cd: #{pathname}: No such file or directory")
     end
   end
 
@@ -137,7 +144,7 @@ end
 
 class EchoCommand < Command
   def run
-    puts(line)
+    write_stdout(line)
   end
 
   private
@@ -151,7 +158,13 @@ end
 
 class ExecutableCommand < Command
   def run
-    system(command, *args)
+    Open3.popen3(command, *args) do |_stdin, stdout, stderr, _wait_thr|
+      stderr_output = stderr.read
+      stdout_output = stdout.read
+
+      output.write_stderr(stderr_output) unless stderr_output.empty?
+      output.write_stdout(stdout_output) unless stdout_output.empty?
+    end
   end
 end
 
@@ -163,13 +176,13 @@ end
 
 class PwdCommand < Command
   def run
-    puts(Dir.getwd)
+    write_stdout(Dir.getwd)
   end
 end
 
 class TypeCommand < Command
   def run
-    puts(builtin_result || program_result || not_found_result)
+    write_stdout(builtin_result || program_result || not_found_result)
   end
 
   private
@@ -218,6 +231,75 @@ class Builtins
   end
 end
 
+class StandardOutput
+  def write_stdout(line)
+    puts(line)
+  end
+
+  def write_stderr(line)
+    puts(line)
+  end
+end
+
+class RedirectOutput
+  attr_reader :file_name
+
+  def initialize(file_name)
+    @file_name = file_name
+  end
+
+  def write_stdout(line)
+    File.write(file_name, line)
+  end
+
+  def write_stderr(line)
+    puts(line)
+  end
+end
+
+class RunCommand
+  attr_reader :args, :command, :context, :output
+
+  def initialize(args:, command:, context:, redirect:)
+    @args = args
+    @command = command
+    @context = context
+    @output = if redirect
+                RedirectOutput.new(redirect)
+              else
+                StandardOutput.new
+              end
+  end
+
+  def run
+    try_run_builtin_command || try_run_executable || command_not_found
+  end
+
+  private
+
+  def try_run_builtin_command
+    command_class = Builtins.get_command_class(command)
+
+    return false unless command_class
+
+    command_class.new(args:, command:, context:, output:).run
+    true
+  end
+
+  def try_run_executable
+    command_path = context.find_command_path(command)
+
+    return false unless command_path
+
+    ExecutableCommand.new(args:, command:, context:, output:).run
+    true
+  end
+
+  def command_not_found
+    output.write_stdout("#{command}: command not found")
+  end
+end
+
 class Shell
   attr_reader :context
 
@@ -233,10 +315,12 @@ class Shell
 
   def read_eval_print
     $stdout.write('$ ')
-    command, args = read
+    command, all_args = read
     return context.exit_repl if command.nil?
 
-    parse(command, args)
+    args, redirect = parse_redirect(all_args)
+
+    RunCommand.new(args:, command:, context:, redirect:).run
   end
 
   def read
@@ -249,30 +333,12 @@ class Shell
     end
   end
 
-  def parse(command, args)
-    try_run_builtin_command(command, args) || try_run_executable(command, args) || command_not_found(command)
-  end
-
-  def try_run_builtin_command(command, args)
-    command_class = Builtins.get_command_class(command)
-
-    return false unless command_class
-
-    command_class.new(args:, command:, context:).run
-    true
-  end
-
-  def try_run_executable(command, args)
-    command_path = context.find_command_path(command)
-
-    return false unless command_path
-
-    ExecutableCommand.new(args:, command:, context:).run
-    true
-  end
-
-  def command_not_found(command)
-    puts("#{command}: command not found")
+  def parse_redirect(args)
+    if args.length >= 3 && args[-2] == '>' || args[-2] == '1>'
+      [args[0..-3], args[-1]]
+    else
+      [args, nil]
+    end
   end
 end
 
