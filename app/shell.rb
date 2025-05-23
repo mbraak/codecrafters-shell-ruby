@@ -1,4 +1,4 @@
-require 'reline'
+require 'readline'
 require_relative './shell_context'
 require_relative './split_line'
 require_relative './parse_redirect_args'
@@ -35,8 +35,9 @@ class Shell
     Reline.completion_proc = proc { |_word|
       %w[echo exit]
     }
+    Readline.completion_append_character = ' '
 
-    input_line = Reline.readline('$ ', true)
+    input_line = Readline.readline('$ ', true)
 
     if input_line.nil?
       [nil, nil]
