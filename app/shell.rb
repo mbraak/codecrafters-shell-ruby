@@ -32,7 +32,7 @@ class Shell
   end
 
   def read
-    Reline.completion_proc = proc { |_word|
+    Readline.completion_proc = proc { |_word|
       %w[echo exit]
     }
     Readline.completion_append_character = ' '
